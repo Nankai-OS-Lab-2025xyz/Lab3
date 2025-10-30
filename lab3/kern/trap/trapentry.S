@@ -1,10 +1,16 @@
 #include <riscv.h>
 
-    .macro SAVE_ALL
+    .macro SAVE_ALL #定义汇编宏
 
-    csrw sscratch, sp
+    csrw sscratch, sp #保存原先的栈顶指针到sscratch
 
-    addi sp, sp, -36 * REGBYTES
+    addi sp, sp, -36 * REGBYTES #REGBYTES是riscv.h定义的常量，表示一个寄存器占据几个字节
+    #让栈顶指针向低地址空间延伸 36个寄存器的空间，可以放下一个trapFrame结构体。
+    #除了32个通用寄存器，我们还要保存4个和中断有关的CSR
+
+    #依次保存32个通用寄存器。但栈顶指针需要特殊处理。
+    #因为我们想在trapFrame里保存分配36个REGBYTES之前的sp
+    #也就是保存之前写到sscratch里的sp的值
     # save x registers
     STORE x0, 0*REGBYTES(sp)
     STORE x1, 1*REGBYTES(sp)
@@ -37,7 +43,7 @@
     STORE x29, 29*REGBYTES(sp)
     STORE x30, 30*REGBYTES(sp)
     STORE x31, 31*REGBYTES(sp)
-
+    # RISCV不能直接从CSR写到内存, 需要csrr把CSR读取到通用寄存器，再从通用寄存器STORE到内存
     # get sr, epc, badvaddr, cause
     # Set sscratch register to 0, so that if a recursive exception
     # occurs, the exception vector knows it came from the kernel
@@ -52,16 +58,18 @@
     STORE s2, 33*REGBYTES(sp)
     STORE s3, 34*REGBYTES(sp)
     STORE s4, 35*REGBYTES(sp)
-    .endm
+    .endm #汇编宏定义结束
 
     .macro RESTORE_ALL
 
     LOAD s1, 32*REGBYTES(sp)
     LOAD s2, 33*REGBYTES(sp)
 
+    # 注意之前保存的几个CSR并不都需要恢复
     csrw sstatus, s1
     csrw sepc, s2
 
+    # 恢复sp之外的通用寄存器，这时候还需要根据sp来确定其他寄存器数值保存的位置
     # restore x registers
     LOAD x1, 1*REGBYTES(sp)
     LOAD x3, 3*REGBYTES(sp)
@@ -94,16 +102,20 @@
     LOAD x30, 30*REGBYTES(sp)
     LOAD x31, 31*REGBYTES(sp)
     # restore sp last
+    # 最后恢复sp，因为sp的值在trapFrame里保存的是保存之前的值
     LOAD x2, 2*REGBYTES(sp)
     .endm
 
     .globl __alltraps
-    .align(2)
+    .align(2) #中断入口点 __alltraps必须四字节对齐
 __alltraps:
-    SAVE_ALL
+    SAVE_ALL #保存上下文
 
-    move  a0, sp
+    move  a0, sp #传递参数。
+    #按照RISCV calling convention, a0寄存器传递参数给接下来调用的函数trap。
+    #trap是trap.c里面的一个C语言函数，也就是我们的中断处理程序
     jal trap
+    #trap函数指向完之后，会回到这里向下继续执行__trapret里面的内容，RESTORE_ALL,sret
     # sp should be the same as before "jal trap"
 
     .globl __trapret

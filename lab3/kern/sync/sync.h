@@ -18,7 +18,7 @@ static inline void __intr_restore(bool flag) {
         intr_enable();
     }
 }
-
+//思考：这里宏定义的 do{}while(0)起什么作用?
 #define local_intr_save(x) \
     do {                   \
         x = __intr_save(); \

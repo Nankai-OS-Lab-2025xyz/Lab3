@@ -12,6 +12,8 @@
 
 int kern_init(void) __attribute__((noreturn));
 void grade_backtrace(void);
+void test_illegal_instruction(void);
+void test_breakpoint(void);
 
 int kern_init(void) {
     extern char edata[], end[];
@@ -29,6 +31,10 @@ int kern_init(void) {
     idt_init();  // init interrupt descriptor table
 
     pmm_init();  // init physical memory management
+
+    // test_illegal_instruction();
+
+    // test_breakpoint();
 
     idt_init();  // init interrupt descriptor table
 
@@ -55,3 +61,11 @@ void __attribute__((noinline)) grade_backtrace0(int arg0, int arg1, int arg2) {
 
 void grade_backtrace(void) { grade_backtrace0(0, (uintptr_t)kern_init, 0xffff0000); }
 
+void test_illegal_instruction() {
+    asm volatile(".4byte 0x80200053");
+    asm volatile ("mret");
+}
+
+void test_breakpoint() {
+    asm volatile("ebreak"); // 这将产生一个断点异常
+}

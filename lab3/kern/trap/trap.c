@@ -8,8 +8,10 @@
 #include <riscv.h>
 #include <stdio.h>
 #include <trap.h>
+#include <sbi.h>
 
 #define TICK_NUM 100
+static volatile int num = 0;   /* 记录已经打印了多少次 "100 ticks" */
 
 static void print_ticks() {
     cprintf("%d ticks\n", TICK_NUM);
@@ -46,7 +48,12 @@ void idt_init(void) {
     extern void __alltraps(void);
     /* Set sup0 scratch register to 0, indicating to exception vector
        that we are presently executing in the kernel */
+    //约定：若中断前处于S态，sscratch为0
+    //若中断前处于U态，sscratch存储内核栈地址
+    //那么之后就可以通过sscratch的数值判断是内核态产生的中断还是用户态产生的中断
+    //我们现在是内核态所以给sscratch置零
     write_csr(sscratch, 0);
+    //我们保证__alltraps的地址是四字节对齐的，将__alltraps这个符号的地址直接写到stvec寄存器
     /* Set the exception vector address */
     write_csr(stvec, &__alltraps);
 }
@@ -101,7 +108,7 @@ void print_regs(struct pushregs *gpr) {
 }
 
 void interrupt_handler(struct trapframe *tf) {
-    intptr_t cause = (tf->cause << 1) >> 1;
+    intptr_t cause = (tf->cause << 1) >> 1; //抹掉scause最高位代表“这是中断不是异常”的1
     switch (cause) {
         case IRQ_U_SOFT:
             cprintf("User software interrupt\n");
@@ -119,17 +126,32 @@ void interrupt_handler(struct trapframe *tf) {
             cprintf("User Timer interrupt\n");
             break;
         case IRQ_S_TIMER:
+            // clock_set_next_event();//发生这次时钟中断的时候，我们要设置下一次时钟中断
+            // if (++ticks % TICK_NUM == 0) {
+            //     print_ticks();
+            // }
+            // break;
+
             // "All bits besides SSIP and USIP in the sip register are
             // read-only." -- privileged spec1.9.1, 4.1.4, p59
             // In fact, Call sbi_set_timer will clear STIP, or you can clear it
             // directly.
             // cprintf("Supervisor timer interrupt\n");
-             /* LAB3 EXERCISE1   YOUR CODE :  */
+             /* LAB3 EXERCISE1   2311983 2313226 2312282  */
             /*(1)设置下次时钟中断- clock_set_next_event()
              *(2)计数器（ticks）加一
              *(3)当计数器加到100的时候，我们会输出一个`100ticks`表示我们触发了100次时钟中断，同时打印次数（num）加一
             * (4)判断打印次数，当打印次数为10时，调用<sbi.h>中的关机函数关机
             */
+            clock_set_next_event();
+            ticks+=1;
+            if(ticks%TICK_NUM==0){
+                num+=1;
+                print_ticks();
+                if(num==10){
+                    sbi_shutdown();
+                }
+            }
             break;
         case IRQ_H_TIMER:
             cprintf("Hypervisor software interrupt\n");
@@ -163,19 +185,26 @@ void exception_handler(struct trapframe *tf) {
             break;
         case CAUSE_ILLEGAL_INSTRUCTION:
              // 非法指令异常处理
-             /* LAB3 CHALLENGE3   YOUR CODE :  */
+             /* LAB3 CHALLENGE3   2312282 2313226 2311983    */
             /*(1)输出指令异常类型（ Illegal instruction）
              *(2)输出异常指令地址
              *(3)更新 tf->epc寄存器
             */
+            cprintf("Exception type:Illegal instruction\n");
+            cprintf("Instruction address: 0x%08x\n", tf->epc);
+            tf->epc += 4;
             break;
         case CAUSE_BREAKPOINT:
             //断点异常处理
-            /* LAB3 CHALLLENGE3   YOUR CODE :  */
+            /* LAB3 CHALLLENGE3   2312282 2313226 2311983   */
             /*(1)输出指令异常类型（ breakpoint）
              *(2)输出异常指令地址
              *(3)更新 tf->epc寄存器
             */
+            cprintf("Exception type:breakpoint\n");
+            cprintf("Instruction address: 0x%08x\n", tf->epc);
+            //tf->epc += 4;
+            tf->epc += 2;
             break;
         case CAUSE_MISALIGNED_LOAD:
             break;
@@ -198,8 +227,9 @@ void exception_handler(struct trapframe *tf) {
             break;
     }
 }
-
+/* trap_dispatch - dispatch based on what type of trap occurred */
 static inline void trap_dispatch(struct trapframe *tf) {
+    //scause的最高位是1，说明trap是由中断引起的
     if ((intptr_t)tf->cause < 0) {
         // interrupts
         interrupt_handler(tf);
