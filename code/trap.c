@@ -1,3 +1,8 @@
+// 余辰民和张津硕  exercise 1 && challenge 3
+
+//完善中断处理，处理时钟中断，完善异常处理
+
+
 #include <assert.h>
 #include <clock.h>
 #include <console.h>
@@ -204,7 +209,6 @@ void exception_handler(struct trapframe *tf) {
             cprintf("Exception type:breakpoint\n");
             cprintf("Instruction address: 0x%08x\n", tf->epc);
             //tf->epc += 4;
-            tf->epc += 2;
             break;
         case CAUSE_MISALIGNED_LOAD:
             break;
@@ -249,4 +253,3 @@ void trap(struct trapframe *tf) {
     // dispatch based on what type of trap occurred
     trap_dispatch(tf);
 }
-
